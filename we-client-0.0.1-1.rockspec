@@ -18,7 +18,7 @@ dependencies = {
    "dkjson",
    "uuid",
    "luafilesystem",   
-   "librs232"
+   "rs232"
 }
 build = {
    type = "builtin",

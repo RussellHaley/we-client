@@ -24,7 +24,7 @@ local uuid = require "uuid"
 local lfs = require 'lfs'
 local serpent = require "serpent"
 local chronos = require 'chronos'
-
+local rs232 = require 'rs232'
 --~ local pty
 --~ local env, err, errno = persist.open_or_new("version_db")
 --~ local mcs_versions = env:open_or_new_db("minecraft_server")
@@ -57,14 +57,6 @@ local function check_mcs_version(uri)
 		return nil, "request failed"
 		--io.stderr:write(tostring(stream), "\n")
 		--os.exit(1)
-	end
-	
-	print(headers[":status"])
-	for k,v in headers:each() do
-		if k == ":status" then
-			print("STATUS BABY")
-		end
-		print(k,v)
 	end
 
 	local body, err = stream:get_body_as_string()
@@ -128,6 +120,14 @@ local function shutdown(pty)
 
 	local count = 1
 	--~ Ask Nicely
+	while pty:hasproc() and count <= 10 do
+		pty:send("/stop\n")
+		cqueues.sleep(1) 
+		count = count + 1
+	end
+
+	--~ NOTE: THIS DOESN'T WORK???
+	--~ KILL
 	while pty:hasproc() and count <= 10 do
 		pty:send("/stop\n")
 		cqueues.sleep(1) 
@@ -536,14 +536,6 @@ end
 local function check_web_for_latest(pty, start_page, mc_dir, interval)
 	local counter = 0
 	repeat
-		print('tick')
-		local uri, jar = check_mcs_version(start_page)
-		if not check_fs_for_mc(mc_dir, jar) then
-	--~ if not mcs_versions:item_exists(jar) then
-		--~ mcs_versions:add_item(jar, {jar = jar, uri = uri, timestamp = os.date("%Y-%m-%d_%H%M%S")}) 
-			logger:info(string.format('Found new file: %s - %s', jar, uri))
-			
-			--~ print(uri, mc_dir, jar)
 			local ok, emsg = download_file(uri, mc_dir, jar)
 
 			if ok  then
@@ -563,27 +555,29 @@ local function check_web_for_latest(pty, start_page, mc_dir, interval)
 				logger:error(emsg)
 			end
 			
-		end
+	--	end
 	cqueues.sleep(interval or 15)
 	  --NOTE: Count will never equal 1!
 	  --         counter = counter + 1
 	until counter == 1
 end
 
+local function OpenSerial(port,speed)
+	base_station_request[msg_type]()
+end
 local function Init()
 	return nil
 end
 
 local function Run()
 	--~ local _, jar = check_mcs_version("http://jiberish.com") --conf.start_page)
-	local _, jar = check_mcs_version(conf.start_page)
-	if not jar then
-		logger:fatal('You have to read jar info from the web first. See start_page in the config.lua file.')
-		os.exit(-1) 
-	end
-	local str = string.format('we-client 0.1. Got jar file: %s', jar)
-	logger:info(str)
-	print(str)
+	--local _, jar = check_mcs_version(conf.start_page)
+	--if not jar then
+	--	logger:fatal('You have to read jar info from the web first. See start_page in the config.lua file.')
+	--	os.exit(-1) 
+	--end
+	local jar = 'we-client'
+	logger:info(string.format('Welcome to %s', jar))
 	
 	--local pty = lpty.new({raw_mode=true})
 	--if not pty then
@@ -598,8 +592,43 @@ local function Run()
 	--	os.exit(-1)
 	--end
 
+	local out = io.stderr
 	cq = cqueues.new()
-
+	
+	cq:wrap(function()
+		local p, e = rs232.port('/dev/ttyS0',{
+  			baud         = '_115200';
+  			data_bits    = '_8';
+  			parity       = 'NONE';
+  			stop_bits    = '_1';
+  			flow_control = 'OFF';
+  			rts          = 'ON';
+			})
+		
+		local err,port  = rs232.open('/dev/ttyS0')
+		if err ~= rs232.RS232_ERR_NOERROR then
+	-- handle error
+			out:write(string.format("can't open serial port '%s', error: '%s'\n",
+			'out_port', rs232.error_tostring(err)))
+			return
+		end
+		repeat
+			if not p then print(e) return 'oops' end	
+		    	print('got here')
+			p:write('holy tolido batman I got here!\r\n')
+			cqueues.slee(2)
+	    	until this ~= nil
+		p:close()
+		--open serial comms using config value
+		--open spi driver or mics radio?
+		--poll serial and mics
+	end);
+	cq:wrap(function()
+		--open a cloud connection. Websocket,mqtt,http?
+		--authenticate?
+		--start with username password
+		--KERBEROS!
+	end)
 	--cq:wrap(function() 
 	--		read_process(pty) 
 	--	end);
@@ -620,7 +649,6 @@ local function Run()
 	local app_server = http_server.listen {
 	host = conf.host;
 	port = conf.port;
-	--tls = true;
 	onstream = process_request;
 	}
 	cq:wrap(function()
